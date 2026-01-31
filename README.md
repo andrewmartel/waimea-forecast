@@ -33,7 +33,7 @@ Additional data sources to complement the buoys:
 
 ### 3. Data Integrity
 
-- **Missingness:** Buoy outages and gaps are likely MAR (missing at random) or related to instrument/transmission issues. The target `wave_height_51201h` and some features have NAs.
+- **Missingness:** Buoy outages and gaps mostly appear in chunks (consecutive periods of missing data), which are likely related to instrument/transmission issues. The target `wave_height_51201h` and some features have NAs.
 - **Target:** For supervised learning, we use only rows where the target (next-day wave height) is observed; we drop rows with missing target when building labels.
 - **Features:** We avoid look-ahead. We impute feature columns with forward fill then fallback to median (median fitted on training data only); no future information is used. For a production system, we could add model-based imputation or separate “missing” indicators and tune with cross-validation.
 
@@ -56,6 +56,21 @@ Options to present to the CEO:
 - **Uncertainty:** Always show intervals or P(height ≥ 3 m) so the WSL can weigh risk when scheduling.
 
 ---
+## Clone and setup
+
+Navigate to the directory in which you want to clone the repo and run your predictions.
+
+# Clone the repository
+```
+git clone https://github.com/andrewmartel/waimea-forecast
+cd waimea-forecast
+```
+
+# Create virtual environment
+```
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
 ## Install
 
@@ -76,7 +91,7 @@ pip install -e ".[dev]"
 
 ## Data
 
-Place the wide-format buoy CSV as `data/wide.csv` (or set the path via `--data` or `WAIMEA_DATA_PATH`). The file must include a `date` column and `wave_height_51201h`. See `data/README.md` for how to obtain the data.
+Place the wide-format buoy CSV as `data/wide.csv` (or set the path via `--data` or `WAIMEA_DATA_PATH`). The file must include a `date` column and `wave_height_51201h`. See `data/README.md` for how to obtain the data. The original dataset is provided already, but if you want to put in your own data you can do so as well.
 
 ---
 
