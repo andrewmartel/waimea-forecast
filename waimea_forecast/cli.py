@@ -55,15 +55,21 @@ def main_train() -> None:
 
     from waimea_forecast.features.engineering import build_features, prepare_supervised
 
-    featurized, _ = build_features(df)
+    featurized, _ = build_features(df, impute=False)
     _, _, X_val, y_val, _, _ = prepare_supervised(
-        featurized, est._feature_state, validation_fraction=0.2
+        featurized,
+        est._feature_state,
+        validation_fraction=0.2,
+        drop_na_rows=False,
     )
+    X_val_imp = est._imputer.transform(X_val)
+    val_ok = ~np.isnan(X_val_imp).any(axis=1)
+    y_val_clean = y_val.iloc[np.where(val_ok)[0]]
     preds = est.predict(df)
-    val_preds = np.array([preds[i] for i in y_val.index if i < len(preds)])
-    if len(val_preds) == len(y_val):
+    val_preds = np.array([preds[i] for i in y_val_clean.index if i < len(preds)])
+    if len(val_preds) == len(y_val_clean):
         report = format_validation_report(
-            y_val.values, val_preds, threshold=CONTEST_THRESHOLD_M
+            y_val_clean.values, val_preds, threshold=CONTEST_THRESHOLD_M
         )
         print(report, file=sys.stderr)
 

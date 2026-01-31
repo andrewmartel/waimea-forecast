@@ -80,12 +80,14 @@ def build_features(
     lags: list[int] | None = None,
     rolling_window: int = ROLLING_WINDOW,
     fitted_medians: dict[str, float] | None = None,
+    impute: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """
     Build feature matrix from raw wide-format DataFrame.
 
     Adds lags of target and key buoy wave heights, rolling stats, and calendar
-    features. Imputes missing values (forward fill then median). No look-ahead.
+    features. Optionally imputes missing values (forward fill then median).
+    Set impute=False when the estimator will fit an imputer on X_train only.
 
     Parameters
     ----------
@@ -96,14 +98,17 @@ def build_features(
     rolling_window : int, optional
         Rolling window for mean/std (default 7).
     fitted_medians : dict, optional
-        Pre-fitted medians for imputation (inference); if None, fit from df.
+        Pre-fitted medians for imputation (inference); used only if impute=True.
+    impute : bool, optional
+        If True, run ffill/bfill/median imputation and return fitted_medians.
+        If False, leave NaNs; state has no fitted_medians (for MICE/KNN path).
 
     Returns
     -------
     pd.DataFrame
-        DataFrame with date, target, and feature columns (no NaNs in feature cols after imputation).
+        Featurized DataFrame; feature cols may contain NaNs if impute=False.
     dict
-        State for inference: fitted_medians, feature_column_order (set later by prepare_supervised).
+        State: fitted_medians (if impute=True), feature_column_order (set later).
     """
     lags = lags or LAG_DAYS
     out = df.copy()
@@ -124,10 +129,11 @@ def build_features(
     # Calendar
     out = _add_calendar(out)
 
-    # Impute
-    out, medians = _impute_features(out, fitted_medians)
-
-    state = {"fitted_medians": medians}
+    if impute:
+        out, medians = _impute_features(out, fitted_medians)
+        state = {"fitted_medians": medians}
+    else:
+        state = {}
     return out, state
 
 
@@ -135,12 +141,13 @@ def prepare_supervised(
     df: pd.DataFrame,
     feature_state: dict[str, Any] | None = None,
     validation_fraction: float = 0.2,
+    drop_na_rows: bool = True,
 ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series, list[str], dict]:
     """
     Prepare aligned X, y and train/validation split by time.
 
     Drops rows where target is NA. Uses last validation_fraction of time for validation.
-    Expects df to be the output of build_features (with feature columns and target).
+    When drop_na_rows=False, X_train and X_val may contain NaNs (for imputer to fill).
 
     Parameters
     ----------
@@ -150,6 +157,8 @@ def prepare_supervised(
         State from build_features (for consistent column order).
     validation_fraction : float, optional
         Fraction of rows (by time) for validation (default 0.2).
+    drop_na_rows : bool, optional
+        If True, drop rows where any feature is NaN. If False, return X with NaNs.
 
     Returns
     -------
@@ -173,9 +182,10 @@ def prepare_supervised(
     feature_cols = [c for c in feature_cols if c in clean.columns]
 
     X = clean[feature_cols]
-    mask = X.notna().all(axis=1)
-    X = X.loc[mask]
-    y = y.loc[mask]
+    if drop_na_rows:
+        mask = X.notna().all(axis=1)
+        X = X.loc[mask]
+        y = y.loc[mask]
 
     n = len(X)
     val_size = max(1, int(n * validation_fraction))
