@@ -104,6 +104,7 @@ class WaveHeightEstimator:
             feature_state=feat_state,
             validation_fraction=self.validation_fraction,
             drop_na_rows=False,
+            horizon_days=self._horizon_days,
         )
         self._feature_state.update(state)
         self._feature_columns = state["feature_column_order"]
@@ -192,6 +193,7 @@ class WaveHeightEstimator:
             "imputer": self._imputer,
             "scaler": self._scaler,
             "model": self._model,
+            "horizon_days": self._horizon_days,
         }
         joblib.dump(payload, path)
 

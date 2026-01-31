@@ -2,7 +2,7 @@
 
 Proof-of-concept package to forecast wave heights at Waimea Bay (North Shore, Oahu) for the World Surf League, so they can schedule a big wave contest when conditions reach at least 3 m.
 
-**Forecast horizons:** 1-, 7-, and 30-day-ahead. The **30-day-ahead** horizon supports WSL’s need for about a month of lead time to organize the contest and for contestants to arrange travel and lodging.
+**Forecast horizons:** 1-, 7-, and 30-day-ahead. The **30-day-ahead** horizon supports WSL’s potential need for about a month of lead time to organize the contest and for contestants to arrange travel and lodging.
 
 **Target variable:** `wave_height_51201h` (North Shore buoy).  
 **Data:** Daily buoy metrics in wide format (`wide.csv`).
@@ -16,7 +16,7 @@ Proof-of-concept package to forecast wave heights at Waimea Bay (North Shore, Oa
 Before building, I would ask the WSL on a kick-off call:
 
 - **Definition of “large enough”:** Confirm the 3 m threshold (or different) and whether it refers to significant wave height, max height, or another metric.
-- **Lead time:** How far ahead do they need the forecast (1 day, 3 days, 1 week)? This drives model choice and feature design.
+- **Lead time:** How far ahead do they need the forecast (1 day, 1 week, 1 month)? This drives model choice and feature design.
 - **Decision use:** Is the output a go/no-go date, a probability of contest-ready conditions, or a full time series of predicted heights?
 - **Update frequency:** Daily retrains vs. on-demand vs. weekly.
 - **Risk tolerance:** How to balance false positives (schedule and cancel) vs. false negatives (miss a good window).
@@ -30,13 +30,14 @@ Additional data sources to complement the buoys:
 - **Satellite and model data:** Wind fields, swell propagation (e.g., from CDIP, NOAA NDBC, or Copernicus).
 - **Other Pacific buoys:** More NDBC buoys for swell direction and period upstream of Hawaii.
 - **Seasonal/climate indices:** ENSO, PNA, etc., for seasonal conditioning.
+- **Weather data:** For shorter term forecasts (e.g., 1- or 7-day) to give a better update on what might be expected and allow the team to notify participants of potential changes to the event.
 
 **Ongoing use:** Ingest via APIs or scheduled batch jobs; store in a small data lake or DB; refresh daily and feed the same feature pipeline used in this PoC.
 
 ### 3. Data Integrity
 
 - **Missingness:** Buoy outages and gaps mostly appear in chunks (consecutive periods of missing data), which are likely related to instrument/transmission issues. The target `wave_height_51201h` and some features have NAs.
-- **Target:** For supervised learning, we use only rows where the target (next-day wave height) is observed; we drop rows with missing target when building labels.
+- **Target:** For supervised learning, we use only rows where the target (n-days-ahead wave height) is observed; we drop rows with missing target when building labels.
 - **Features:** We avoid look-ahead. We impute feature columns with **MICE** (sklearn `IterativeImputer`) fitted on training data only; optionally use **KNN** (`imputation="knn"` on the estimator). No future information is used. The column `wave_height_21418t` is excluded from features (too much missing data). For production, we could add missingness indicators or tune imputation.
 
 ### 4. Approaches
@@ -52,7 +53,7 @@ Options to present to the CEO:
 
 ### 5. Communication
 
-- **Dashboard:** e.g. Streamlit or internal tool showing point forecast and “contest-ready” probability (≥ 3 m) for the next 1–7 days.
+- **Dashboard:** e.g. Streamlit or internal tool showing point forecast and “contest-ready” probability (≥ 3 m) for the next 30 days.
 - **API:** Endpoint for WSL systems to pull forecasts and thresholds on demand.
 - **Scheduled reports:** Daily email or PDF with summary and recommended windows.
 - **Uncertainty:** Always show intervals or P(height ≥ 3 m) so the WSL can weigh risk when scheduling.
@@ -159,7 +160,7 @@ waimea-predict --data data/wide.csv --model models/artifact.joblib --out predict
 ## Design Assumptions
 
 - **Target:** `wave_height_51201h` (next-day value).
-- **Horizon:** 1 day ahead.
+- **Horizon:** N days ahead (must be 1, 7, or 30 as of now; default if not speified is 1).
 - **Train/validation split:** Last 20% of time for validation; no shuffling.
 - **Missing data:** Rows with missing target are dropped for labels; features are imputed with MICE (or KNN) on training data only; no look-ahead.
 - **Seasonality:** Annual cycle is encoded with **day-of-year sin/cos** (smooth cyclic so Dec 31 is close to Jan 1); **month sin/cos** and raw **day_of_year** are also included. This helps capture seasonal swell patterns (e.g. North Pacific winter swell).
