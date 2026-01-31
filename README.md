@@ -2,6 +2,8 @@
 
 Proof-of-concept package to forecast wave heights at Waimea Bay (North Shore, Oahu) for the World Surf League, so they can schedule a big wave contest when conditions reach at least 3 m.
 
+**Forecast horizons:** 1-, 7-, and 30-day-ahead. The **30-day-ahead** horizon supports WSL’s need for about a month of lead time to organize the contest and for contestants to arrange travel and lodging.
+
 **Target variable:** `wave_height_51201h` (North Shore buoy).  
 **Data:** Daily buoy metrics in wide format (`wide.csv`).
 
@@ -46,7 +48,7 @@ Options to present to the CEO:
 - **ML (this PoC):** Ridge regression on lags, other-buoy metrics, and calendar features — interpretable, stable, and a clear starting point.
 - **More advanced:** Tree models (e.g. Random Forest), Prophet, or light neural models for multi-step or probabilistic forecasts.
 
-**Recommendation:** Start with this interpretable, reproducible baseline (Ridge + lags + other buoys + calendar). Then iterate with feature selection, other models, and probabilistic outputs (e.g. probability that height ≥ 3 m) as needed.
+**Recommendation:** Start with this interpretable, reproducible baseline (Ridge + lags + other buoys + calendar/seasonality). Then iterate with feature selection, other models, and probabilistic outputs (e.g. probability that height ≥ 3 m) as needed.
 
 ### 5. Communication
 
@@ -97,13 +99,25 @@ Place the wide-format buoy CSV as `data/wide.csv` (or set the path via `--data` 
 
 ## Train
 
-Train the estimator and save the artifact (default: `models/artifact.joblib`):
+Train the estimator and save the artifact (default: `models/artifact.joblib`). Use **`--horizon`** to train 1-, 7-, or 30-day-ahead models (default: 1):
 
 ```bash
 python scripts/train.py
 ```
 
-With custom paths:
+Train a 30-day-ahead model (for month-ahead planning) and save to a separate artifact:
+
+```bash
+python scripts/train.py --data data/wide.csv --model models/artifact_30d.joblib --horizon 30
+```
+
+Train 7-day-ahead:
+
+```bash
+python scripts/train.py --data data/wide.csv --model models/artifact_7d.joblib --horizon 7
+```
+
+With custom paths (1-day default):
 
 ```bash
 python scripts/train.py --data data/wide.csv --model models/artifact.joblib
@@ -113,6 +127,7 @@ Or after `pip install -e .`:
 
 ```bash
 waimea-train --data data/wide.csv --model models/artifact.joblib
+waimea-train --data data/wide.csv --model models/artifact_30d.joblib --horizon 30
 ```
 
 The script prints the artifact path and a full validation report: **regression** (MAE, RMSE, MAPE, R2, bias) and **classification** (confusion matrix, accuracy, precision, recall, F1, ROC AUC) for the binary “contest-ready” threshold (≥ 3 m).
@@ -127,7 +142,7 @@ Load the artifact and run predictions on a CSV with the same schema as training:
 python scripts/predict.py --data data/wide.csv --model models/artifact.joblib
 ```
 
-Output is a **CSV** with five columns: **date** (prediction date), **predicted** (wave height, m), **actual** (observed height when available), **abs_delta** (|predicted − actual|), and **correct_3m** (1 if the model correctly predicts whether waves are ≥ 3 m, 0 otherwise). Rows with missing actuals are omitted from the table. Without `--out`, the CSV is printed to stdout. To save to a file:
+The **horizon** is determined by the artifact (the model was trained with that horizon). Output is a **CSV** with five columns: **date** (the date being predicted, i.e. *horizon* days ahead of the feature date), **predicted** (wave height, m), **actual** (observed height when available), **abs_delta** (|predicted − actual|), and **correct_3m** (1 if the model correctly predicts whether waves are ≥ 3 m, 0 otherwise). Rows with missing actuals are omitted. Without `--out`, the CSV is printed to stdout. To save to a file:
 
 ```bash
 python scripts/predict.py --data data/wide.csv --model models/artifact.joblib --out predictions.csv
@@ -146,15 +161,16 @@ waimea-predict --data data/wide.csv --model models/artifact.joblib --out predict
 - **Target:** `wave_height_51201h` (next-day value).
 - **Horizon:** 1 day ahead.
 - **Train/validation split:** Last 20% of time for validation; no shuffling.
-- **Missing data:** Rows with missing target are dropped for labels; features are imputed with forward fill then training median (no look-ahead).
-- **Model:** Ridge regression on lags (1–7 days), other-buoy wave heights (1-day lags), 7-day rolling mean/std of target, and calendar (day-of-year, month sin/cos). Features are standardized before fitting.
+- **Missing data:** Rows with missing target are dropped for labels; features are imputed with MICE (or KNN) on training data only; no look-ahead.
+- **Seasonality:** Annual cycle is encoded with **day-of-year sin/cos** (smooth cyclic so Dec 31 is close to Jan 1); **month sin/cos** and raw **day_of_year** are also included. This helps capture seasonal swell patterns (e.g. North Pacific winter swell).
+- **Model:** Ridge regression on lags (1–7 days), other-buoy wave heights (1-day lags), 7-day rolling mean/std of target, and calendar/seasonality features above. Features are standardized before fitting.
 
 ---
 
 ## Next Steps (with more time)
 
 - **Imputation:** MICE is in place; add missingness indicators or compare other strategies.
-- **Horizons:** Multi-step (3- and 7-day) and separate models or direct multi-output.
+- **Horizons:** 1/7/30-day are supported; consider horizon-specific lags (e.g. 30- and 365-day lags for 30-day-ahead) or direct multi-output.
 - **Probabilistic forecasts:** Quantile regression or bootstrap to output P(height ≥ 3 m) and intervals.
 - **Feature selection:** Regularization path or SHAP to reduce and explain predictors.
 - **External data:** Integrate NOAA/NDBC or other APIs and refresh in a pipeline.
@@ -167,7 +183,7 @@ waimea-predict --data data/wide.csv --model models/artifact.joblib --out predict
 
 ```
 waimea_forecast/
-├── config.py         # Target, paths, horizon, split
+├── config.py         # Target, paths, horizons (1/7/30d), split, excluded columns, 3m threshold
 ├── data/loader.py    # load_wide(), validate_schema()
 ├── features/engineering.py  # build_features(), prepare_supervised()
 ├── models/estimator.py      # WaveHeightEstimator (fit/predict/save/load)

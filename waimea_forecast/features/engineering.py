@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from waimea_forecast.config import TARGET_COLUMN
+from waimea_forecast.config import EXCLUDED_FEATURE_COLUMNS, TARGET_COLUMN
 
 # Lag days for target and key predictors
 LAG_DAYS = [1, 2, 3, 7]
@@ -39,15 +39,23 @@ def _add_rolling(df: pd.DataFrame, column: str, window: int) -> pd.DataFrame:
     return out
 
 
+# Annual cycle length for day-of-year encoding (leap-year aware)
+DAYS_PER_YEAR = 365.25
+
+
 def _add_calendar(df: pd.DataFrame) -> pd.DataFrame:
-    """Add day-of-year and month (sin/cos for cyclicity)."""
+    """Add calendar and seasonality features (day-of-year, month, annual cycle sin/cos)."""
     out = df.copy()
     if "date" not in out.columns:
         return out
     dt = pd.to_datetime(out["date"])
-    out["day_of_year"] = dt.dt.dayofyear
+    doy = dt.dt.dayofyear
+    out["day_of_year"] = doy
     out["month_sin"] = np.sin(2 * np.pi * dt.dt.month / 12)
     out["month_cos"] = np.cos(2 * np.pi * dt.dt.month / 12)
+    # Annual seasonality: smooth cyclic encoding so Dec 31 is close to Jan 1
+    out["day_of_year_sin"] = np.sin(2 * np.pi * doy / DAYS_PER_YEAR)
+    out["day_of_year_cos"] = np.cos(2 * np.pi * doy / DAYS_PER_YEAR)
     return out
 
 
@@ -117,8 +125,14 @@ def build_features(
     # Lags of target
     out = _add_lags(out, TARGET_COLUMN, lags)
 
-    # Lags of other wave height columns (1-day only to keep matrix size reasonable)
-    wave_cols = [c for c in out.columns if c.startswith("wave_height_") and c != TARGET_COLUMN]
+    # Lags of other wave height columns (1-day only; skip excluded columns)
+    wave_cols = [
+        c
+        for c in out.columns
+        if c.startswith("wave_height_")
+        and c != TARGET_COLUMN
+        and c not in EXCLUDED_FEATURE_COLUMNS
+    ]
     for col in wave_cols[:5]:  # limit to first 5 to avoid explosion
         if col in out.columns:
             out = _add_lags(out, col, [1])
@@ -142,11 +156,12 @@ def prepare_supervised(
     feature_state: dict[str, Any] | None = None,
     validation_fraction: float = 0.2,
     drop_na_rows: bool = True,
+    horizon_days: int = 1,
 ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series, list[str], dict]:
     """
     Prepare aligned X, y and train/validation split by time.
 
-    Drops rows where target is NA. Uses last validation_fraction of time for validation.
+    Target is wave height horizon_days ahead. Drops rows where target is NA.
     When drop_na_rows=False, X_train and X_val may contain NaNs (for imputer to fill).
 
     Parameters
@@ -159,6 +174,8 @@ def prepare_supervised(
         Fraction of rows (by time) for validation (default 0.2).
     drop_na_rows : bool, optional
         If True, drop rows where any feature is NaN. If False, return X with NaNs.
+    horizon_days : int, optional
+        Forecast horizon in days (default 1). Each row's features predict target at +horizon_days.
 
     Returns
     -------
@@ -166,15 +183,15 @@ def prepare_supervised(
     feature_columns : list[str]
         Column names for X.
     state : dict
-        Updated feature_state with feature_column_order.
+        Updated feature_state with feature_column_order and horizon_days.
     """
     clean = df.dropna(subset=[TARGET_COLUMN]).copy()
     clean = clean.sort_values(DATE_COL).reset_index(drop=True)
 
-    # Target: next-day (today's features -> tomorrow's height)
-    y = clean[TARGET_COLUMN].shift(-1)
-    clean = clean.iloc[:-1].copy()
-    y = y.iloc[:-1]
+    # Target: value horizon_days ahead (today's features -> height at +horizon_days)
+    y = clean[TARGET_COLUMN].shift(-horizon_days)
+    clean = clean.iloc[:-horizon_days].copy()
+    y = y.iloc[:-horizon_days]
     clean = clean.loc[y.notna().index]
     y = y.dropna()
 
@@ -198,5 +215,6 @@ def prepare_supervised(
 
     state = dict(feature_state) if feature_state else {}
     state["feature_column_order"] = feature_cols
+    state["horizon_days"] = horizon_days
 
     return X_train, y_train, X_val, y_val, feature_cols, state

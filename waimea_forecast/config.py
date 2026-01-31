@@ -18,3 +18,6 @@ ARTIFACT_VERSION = "1.0"
 
 # Contest-ready threshold (m): waves >= this height are "big enough"
 CONTEST_THRESHOLD_M = 3.0
+
+# Columns to exclude from features (e.g. too much missing data)
+EXCLUDED_FEATURE_COLUMNS = ["wave_height_21418t"]
