@@ -1,14 +1,23 @@
 """CLI entry points for train and predict."""
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
-from waimea_forecast.config import DEFAULT_ARTIFACT_PATH, DEFAULT_DATA_PATH
+from waimea_forecast.config import (
+    CONTEST_THRESHOLD_M,
+    DEFAULT_ARTIFACT_PATH,
+    DEFAULT_DATA_PATH,
+    TARGET_COLUMN,
+)
 from waimea_forecast.data.loader import load_wide, validate_schema
+from waimea_forecast.metrics import format_validation_report
 from waimea_forecast.models.estimator import WaveHeightEstimator
 
 
@@ -53,8 +62,10 @@ def main_train() -> None:
     preds = est.predict(df)
     val_preds = np.array([preds[i] for i in y_val.index if i < len(preds)])
     if len(val_preds) == len(y_val):
-        mae = np.abs(val_preds - y_val.values).mean()
-        print(f"Validation MAE: {mae:.4f} m", file=sys.stderr)
+        report = format_validation_report(
+            y_val.values, val_preds, threshold=CONTEST_THRESHOLD_M
+        )
+        print(report, file=sys.stderr)
 
 
 def main_predict() -> None:
@@ -92,10 +103,35 @@ def main_predict() -> None:
     validate_schema(df)
 
     preds = est.predict(df)
+    # preds[i] = prediction for the *next* day (date at row i+1)
+    n = len(df)
+    pred_dates = df["date"].iloc[1:n].reset_index(drop=True)
+    pred_values = np.asarray(preds[: n - 1])
+    actual_values = df[TARGET_COLUMN].iloc[1:n].reset_index(drop=True)
+    # Drop rows where actual is missing
+    valid = actual_values.notna()
+    pred_dates = pred_dates[valid]
+    pred_values = pred_values[valid.values]
+    actual_values = actual_values[valid].values
+    abs_delta = np.abs(pred_values - actual_values)
+    correct_3m = (
+        (np.asarray(pred_values >= CONTEST_THRESHOLD_M))
+        == (np.asarray(actual_values >= CONTEST_THRESHOLD_M))
+    ).astype(int)
+
+    out_df = pd.DataFrame(
+        {
+            "date": pred_dates,
+            "predicted": pred_values,
+            "actual": actual_values,
+            "abs_delta": abs_delta,
+            "correct_3m": correct_3m,
+        }
+    )
+
     out_path = Path(args.out) if args.out else None
     if out_path:
-        np.savetxt(out_path, preds, fmt="%.6f")
+        out_df.to_csv(out_path, index=False, date_format="%Y-%m-%d")
         print(f"Wrote predictions to {out_path}", file=sys.stderr)
     else:
-        for p in preds:
-            print(p)
+        print(out_df.to_csv(index=False, date_format="%Y-%m-%d"))

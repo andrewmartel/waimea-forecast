@@ -15,3 +15,6 @@ VALIDATION_FRACTION = 0.2
 
 # Artifact version for reproducibility
 ARTIFACT_VERSION = "1.0"
+
+# Contest-ready threshold (m): waves >= this height are "big enough"
+CONTEST_THRESHOLD_M = 3.0

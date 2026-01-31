@@ -4,6 +4,7 @@ data/*.csv
 /models/
 *.joblib
 predictions.txt
+predictions.csv
 
 # Python
 __pycache__/
