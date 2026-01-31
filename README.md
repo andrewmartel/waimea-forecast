@@ -33,7 +33,7 @@ Additional data sources to complement the buoys:
 
 ### 3. Data Integrity
 
-- **Missingness:** Buoy outages and gaps are likely MAR (missing at random) or related to instrument/transmission issues. The target `wave_height_51201h` and some features have NAs.
+- **Missingness:** Buoy outages and gaps mostly appear in chunks (consecutive periods of missing data), which are likely related to instrument/transmission issues. The target `wave_height_51201h` and some features have NAs.
 - **Target:** For supervised learning, we use only rows where the target (next-day wave height) is observed; we drop rows with missing target when building labels.
 - **Features:** We avoid look-ahead. We impute feature columns with forward fill then fallback to median (median fitted on training data only); no future information is used. For a production system, we could add model-based imputation or separate “missing” indicators and tune with cross-validation.
 
