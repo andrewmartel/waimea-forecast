@@ -29,6 +29,7 @@ except ImportError:
 
 from waimea_forecast.config import (
     ARTIFACT_VERSION,
+    FORECAST_HORIZON_DAYS,
     TARGET_COLUMN,
     VALIDATION_FRACTION,
 )
@@ -71,10 +72,12 @@ class WaveHeightEstimator:
         validation_fraction: float = VALIDATION_FRACTION,
         random_state: int | None = None,
         imputation: Literal["mice", "knn"] = "mice",
+        horizon_days: int = FORECAST_HORIZON_DAYS,
     ):
         self.validation_fraction = validation_fraction
         self.random_state = random_state
         self.imputation = imputation
+        self._horizon_days = horizon_days
         self._feature_state: dict[str, Any] = {}
         self._feature_columns: list[str] = []
         self._imputer: IterativeImputer | KNNImputer | None = None
@@ -138,7 +141,9 @@ class WaveHeightEstimator:
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
         """
-        Predict next-day wave height for each row using fitted pipeline.
+        Predict wave height horizon_days ahead for each row using fitted pipeline.
+
+        pred[i] is the forecast for the date at row i + horizon_days.
 
         Parameters
         ----------
@@ -200,6 +205,7 @@ class WaveHeightEstimator:
         est = cls()
         est._feature_state = payload.get("feature_state", {})
         est._feature_columns = payload.get("feature_columns", [])
+        est._horizon_days = payload.get("horizon_days", FORECAST_HORIZON_DAYS)
         est._imputer = payload.get("imputer")
         est._scaler = payload["scaler"]
         est._model = payload["model"]

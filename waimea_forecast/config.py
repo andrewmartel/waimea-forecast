@@ -7,8 +7,11 @@ TARGET_COLUMN = "wave_height_51201h"
 DEFAULT_DATA_PATH = "data/wide.csv"
 DEFAULT_ARTIFACT_PATH = "models/artifact.joblib"
 
-# Forecast horizon: next-day prediction (1 day ahead)
+# Forecast horizon: default 1 day ahead
 FORECAST_HORIZON_DAYS = 1
+
+# Supported horizons for training (1d short-term, 7d week-ahead, 30d month-ahead for WSL planning)
+FORECAST_HORIZONS_DAYS = [1, 7, 30]
 
 # Train/validation split: last 20% by time for validation
 VALIDATION_FRACTION = 0.2

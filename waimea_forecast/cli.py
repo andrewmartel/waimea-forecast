@@ -14,6 +14,7 @@ from waimea_forecast.config import (
     CONTEST_THRESHOLD_M,
     DEFAULT_ARTIFACT_PATH,
     DEFAULT_DATA_PATH,
+    FORECAST_HORIZON_DAYS,
     TARGET_COLUMN,
 )
 from waimea_forecast.data.loader import load_wide, validate_schema
@@ -36,6 +37,13 @@ def main_train() -> None:
         default=os.environ.get("WAIMEA_ARTIFACT_PATH", DEFAULT_ARTIFACT_PATH),
         help="Path to save artifact",
     )
+    parser.add_argument(
+        "--horizon",
+        type=int,
+        default=FORECAST_HORIZON_DAYS,
+        choices=[1, 7, 30],
+        help="Forecast horizon in days (1, 7, or 30)",
+    )
     args = parser.parse_args()
 
     data_path = Path(args.data)
@@ -44,7 +52,7 @@ def main_train() -> None:
     df = load_wide(data_path)
     validate_schema(df)
 
-    est = WaveHeightEstimator()
+    est = WaveHeightEstimator(horizon_days=args.horizon)
     est.fit(df)
 
     model_path = Path(args.model)
@@ -109,11 +117,11 @@ def main_predict() -> None:
     validate_schema(df)
 
     preds = est.predict(df)
-    # preds[i] = prediction for the *next* day (date at row i+1)
+    h = getattr(est, "_horizon_days", 1)
     n = len(df)
-    pred_dates = df["date"].iloc[1:n].reset_index(drop=True)
-    pred_values = np.asarray(preds[: n - 1])
-    actual_values = df[TARGET_COLUMN].iloc[1:n].reset_index(drop=True)
+    pred_dates = df["date"].iloc[h:n].reset_index(drop=True)
+    pred_values = np.asarray(preds[: n - h])
+    actual_values = df[TARGET_COLUMN].iloc[h:n].reset_index(drop=True)
     # Drop rows where actual is missing
     valid = actual_values.notna()
     pred_dates = pred_dates[valid]
