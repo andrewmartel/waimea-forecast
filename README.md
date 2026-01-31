@@ -35,7 +35,7 @@ Additional data sources to complement the buoys:
 
 - **Missingness:** Buoy outages and gaps mostly appear in chunks (consecutive periods of missing data), which are likely related to instrument/transmission issues. The target `wave_height_51201h` and some features have NAs.
 - **Target:** For supervised learning, we use only rows where the target (next-day wave height) is observed; we drop rows with missing target when building labels.
-- **Features:** We avoid look-ahead. We impute feature columns with forward fill then fallback to median (median fitted on training data only); no future information is used. For a production system, we could add model-based imputation or separate “missing” indicators and tune with cross-validation.
+- **Features:** We avoid look-ahead. We impute feature columns with **MICE** (sklearn `IterativeImputer`) fitted on training data only; optionally use **KNN** (`imputation="knn"` on the estimator). No future information is used. The column `wave_height_21418t` is excluded from features (too much missing data). For production, we could add missingness indicators or tune imputation.
 
 ### 4. Approaches
 
@@ -77,7 +77,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 Requires Python 3.10+.
 
 ```bash
-cd waimea-forecast-1
+cd waimea-forecast
 pip install -e .
 ```
 
@@ -115,7 +115,7 @@ Or after `pip install -e .`:
 waimea-train --data data/wide.csv --model models/artifact.joblib
 ```
 
-The script prints the artifact path and an approximate validation MAE.
+The script prints the artifact path and a full validation report: **regression** (MAE, RMSE, MAPE, R2, bias) and **classification** (confusion matrix, accuracy, precision, recall, F1, ROC AUC) for the binary “contest-ready” threshold (≥ 3 m).
 
 ---
 
@@ -127,16 +127,16 @@ Load the artifact and run predictions on a CSV with the same schema as training:
 python scripts/predict.py --data data/wide.csv --model models/artifact.joblib
 ```
 
-Predictions are written to stdout (one per line). To save to a file:
+Output is a **CSV** with five columns: **date** (prediction date), **predicted** (wave height, m), **actual** (observed height when available), **abs_delta** (|predicted − actual|), and **correct_3m** (1 if the model correctly predicts whether waves are ≥ 3 m, 0 otherwise). Rows with missing actuals are omitted from the table. Without `--out`, the CSV is printed to stdout. To save to a file:
 
 ```bash
-python scripts/predict.py --data data/wide.csv --model models/artifact.joblib --out predictions.txt
+python scripts/predict.py --data data/wide.csv --model models/artifact.joblib --out predictions.csv
 ```
 
 Or:
 
 ```bash
-waimea-predict --data data/wide.csv --model models/artifact.joblib --out predictions.txt
+waimea-predict --data data/wide.csv --model models/artifact.joblib --out predictions.csv
 ```
 
 ---
@@ -153,7 +153,7 @@ waimea-predict --data data/wide.csv --model models/artifact.joblib --out predict
 
 ## Next Steps (with more time)
 
-- **Imputation:** Try model-based or iterative imputation; add missingness indicators.
+- **Imputation:** MICE is in place; add missingness indicators or compare other strategies.
 - **Horizons:** Multi-step (3- and 7-day) and separate models or direct multi-output.
 - **Probabilistic forecasts:** Quantile regression or bootstrap to output P(height ≥ 3 m) and intervals.
 - **Feature selection:** Regularization path or SHAP to reduce and explain predictors.
