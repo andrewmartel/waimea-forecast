@@ -56,6 +56,14 @@ Options to present to the CEO:
 - **Uncertainty:** Always show intervals or P(height ≥ 3 m) so the WSL can weigh risk when scheduling.
 
 ---
+## Clone
+# Clone the repository
+git clone https://github.com/yourusername/waimea-forecast
+cd waimea-forecast
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 ## Install
 
@@ -76,7 +84,7 @@ pip install -e ".[dev]"
 
 ## Data
 
-Place the wide-format buoy CSV as `data/wide.csv` (or set the path via `--data` or `WAIMEA_DATA_PATH`). The file must include a `date` column and `wave_height_51201h`. See `data/README.md` for how to obtain the data.
+Place the wide-format buoy CSV as `data/wide.csv` (or set the path via `--data` or `WAIMEA_DATA_PATH`). The file must include a `date` column and `wave_height_51201h`. See `data/README.md` for how to obtain the data. The original dataset is provided already, but if you want to put in your own data you can do so as well.
 
 ---
 
