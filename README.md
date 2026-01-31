@@ -56,14 +56,21 @@ Options to present to the CEO:
 - **Uncertainty:** Always show intervals or P(height ≥ 3 m) so the WSL can weigh risk when scheduling.
 
 ---
-## Clone
+## Clone and setup
+
+Navigate to the directory in which you want to clone the repo and run your predictions.
+
 # Clone the repository
-git clone https://github.com/yourusername/waimea-forecast
+```
+git clone https://github.com/andrewmartel/waimea-forecast
 cd waimea-forecast
+```
 
 # Create virtual environment
+```
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
 ## Install
 
