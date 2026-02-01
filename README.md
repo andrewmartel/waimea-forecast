@@ -16,7 +16,7 @@ Proof-of-concept package to forecast wave heights at Waimea Bay (North Shore, Oa
 Before building, I would ask the WSL on a kick-off call:
 
 - **Definition of “large enough”:** Confirm the 3 m threshold (or different) and whether it refers to significant wave height, max height, or another metric.
-- **Lead time:** How far ahead do they need the forecast (1 day, 1 week, 1 month)? This drives model choice and feature design.
+- **Lead time:** How far ahead do they need the forecast (1 day, 1 week, 1 month, 6 months)? This drives model choice and feature design.
 - **Decision use:** Is the output a go/no-go date, a probability of contest-ready conditions, or a full time series of predicted heights?
 - **Update frequency:** Daily retrains vs. on-demand vs. weekly.
 - **Risk tolerance:** How to balance false positives (schedule and cancel) vs. false negatives (miss a good window).
@@ -38,7 +38,7 @@ Additional data sources to complement the buoys:
 
 - **Missingness:** Buoy outages and gaps mostly appear in chunks (consecutive periods of missing data), which are likely related to instrument/transmission issues. The target `wave_height_51201h` and some features have NAs.
 - **Target:** For supervised learning, we use only rows where the target (n-days-ahead wave height) is observed; we drop rows with missing target when building labels.
-- **Features:** We avoid look-ahead. We impute feature columns with **MICE** (sklearn `IterativeImputer`) fitted on training data only; optionally use **KNN** (`imputation="knn"` on the estimator). No future information is used. The column `wave_height_21418t` is excluded from features (too much missing data). For production, we could add missingness indicators or tune imputation.
+- **Features:** We avoid look-ahead. We impute feature columns with **MICE** (sklearn `IterativeImputer`) fitted on training data only; optionally use **KNN** (`imputation="knn"` on the estimator). No future information is used. The column `wave_height_21418t` is excluded from features (58% missing). For production, we could add missingness indicators or tune imputation.
 
 ### 4. Approaches
 
