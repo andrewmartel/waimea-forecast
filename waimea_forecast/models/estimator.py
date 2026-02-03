@@ -8,7 +8,7 @@ from typing import Any, Literal
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.preprocessing import StandardScaler
 
 try:
@@ -29,6 +29,7 @@ except ImportError:
 
 from waimea_forecast.config import (
     ARTIFACT_VERSION,
+    CONTEST_THRESHOLD_M,
     FORECAST_HORIZON_DAYS,
     TARGET_COLUMN,
     VALIDATION_FRACTION,
@@ -73,15 +74,21 @@ class WaveHeightEstimator:
         random_state: int | None = None,
         imputation: Literal["mice", "knn"] = "mice",
         horizon_days: int = FORECAST_HORIZON_DAYS,
+        max_features: int | None = None,
+        calibrator_threshold_m: float = CONTEST_THRESHOLD_M,
     ):
         self.validation_fraction = validation_fraction
         self.random_state = random_state
         self.imputation = imputation
         self._horizon_days = horizon_days
+        self._max_features = max_features
+        self._calibrator_threshold_m = calibrator_threshold_m
         self._feature_state: dict[str, Any] = {}
         self._feature_columns: list[str] = []
+        self._feature_columns_full: list[str] | None = None  # set when max_features used (imputer input)
         self._imputer: IterativeImputer | KNNImputer | None = None
         self._model: Ridge | None = None
+        self._platt: LogisticRegression | None = None  # P(actual >= calibrator_threshold_m | pred)
 
     def fit(self, df: pd.DataFrame) -> "WaveHeightEstimator":
         """
@@ -96,7 +103,9 @@ class WaveHeightEstimator:
         -------
         self : WaveHeightEstimator
         """
-        featurized, feat_state = build_features(df, impute=False)
+        featurized, feat_state = build_features(
+            df, horizon_days=self._horizon_days, impute=False
+        )
         self._feature_state = feat_state
 
         X_train, y_train, X_val, y_val, feature_cols, state = prepare_supervised(
@@ -138,6 +147,37 @@ class WaveHeightEstimator:
         self._scaler = scaler
         self._model = model
 
+        # Optional: keep only top max_features by |coefficient|, then refit scaler and model
+        if self._max_features is not None and len(self._feature_columns) > self._max_features:
+            order = np.argsort(np.abs(model.coef_.ravel()))[::-1]
+            selected_idx = order[: self._max_features]
+            self._feature_columns_full = list(self._feature_columns)
+            self._feature_columns = [self._feature_columns_full[i] for i in selected_idx]
+            self._feature_state["feature_column_order"] = self._feature_columns
+            self._feature_state["feature_columns_full"] = self._feature_columns_full
+
+            X_train_sel = X_train_imp[:, selected_idx]
+            X_val_sel = X_val_imp[:, selected_idx]
+            scaler_sel = StandardScaler()
+            X_train_scaled_sel = scaler_sel.fit_transform(X_train_sel)
+            model_sel = Ridge(alpha=1.0, random_state=self.random_state)
+            model_sel.fit(X_train_scaled_sel, y_train)
+
+            self._scaler = scaler_sel
+            self._model = model_sel
+
+        # Platt scaling: P(actual >= calibrator_threshold_m | Ridge pred) on validation set
+        if self._feature_columns_full is not None:
+            idx_platt = [self._feature_columns_full.index(c) for c in self._feature_columns]
+            X_val_platt = X_val_imp[:, idx_platt]
+        else:
+            X_val_platt = X_val_imp
+        val_pred_ridge = self._model.predict(self._scaler.transform(X_val_platt))
+        y_val_bin = (y_val.values >= self._calibrator_threshold_m).astype(float)
+        platt = LogisticRegression(C=1e10, max_iter=1000, random_state=self.random_state)
+        platt.fit(val_pred_ridge.reshape(-1, 1), y_val_bin)
+        self._platt = platt
+
         return self
 
     def predict(self, df: pd.DataFrame) -> np.ndarray:
@@ -159,13 +199,19 @@ class WaveHeightEstimator:
         if self._model is None:
             raise ValueError("Estimator not fitted; call fit() first.")
 
-        featurized, _ = build_features(df, impute=False)
+        featurized, _ = build_features(
+            df, horizon_days=self._horizon_days, impute=False
+        )
         feature_cols = self._feature_state.get("feature_column_order", self._feature_columns)
-        missing = [c for c in feature_cols if c not in featurized.columns]
+        # Imputer was fit on full feature set when selection was used
+        cols_for_imputer = (
+            self._feature_columns_full if self._feature_columns_full is not None else feature_cols
+        )
+        missing = [c for c in cols_for_imputer if c not in featurized.columns]
         if missing:
             raise ValueError(f"Missing feature columns for prediction: {missing}")
 
-        X = featurized[feature_cols]
+        X = featurized[cols_for_imputer]
 
         if self._imputer is not None:
             X_imp = self._imputer.transform(X)
@@ -179,8 +225,53 @@ class WaveHeightEstimator:
                     X_imp[c] = X_imp[c].fillna(med)
             X_imp = X_imp.values
 
+        if self._feature_columns_full is not None:
+            idx = [self._feature_columns_full.index(c) for c in feature_cols]
+            X_imp = np.asarray(X_imp)[:, idx]
+
         X_scaled = self._scaler.transform(X_imp)
         return self._model.predict(X_scaled)
+
+    def predict_with_proba(
+        self,
+        df: pd.DataFrame,
+        threshold_m: float | None = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Predict wave height and P(actual >= threshold) for each row.
+
+        Uses the Ridge point forecast and, if a Platt calibrator was fit, returns
+        calibrated P(actual >= threshold). The threshold defaults to the one the
+        calibrator was fit for; pass threshold_m to use a different threshold
+        (the calibrator is still the one fit for calibrator_threshold_m; for a
+        different threshold you would need to retrain with that threshold).
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Raw wide-format DataFrame (same schema as training).
+        threshold_m : float, optional
+            Height threshold (m) for contest-ready. Default: the threshold used
+            when fitting the calibrator (calibrator_threshold_m).
+
+        Returns
+        -------
+        point_pred : np.ndarray
+            Point forecast (same as predict(df)).
+        p_above : np.ndarray
+            P(actual >= threshold_m), shape (n,). If no calibrator, returns NaN.
+        """
+        point_pred = self.predict(df)
+        thresh = threshold_m if threshold_m is not None else self._calibrator_threshold_m
+        if self._platt is not None:
+            # Calibrator was fit for calibrator_threshold_m; we use it for thresh
+            # (same threshold by default; if user passes different one we still use
+            # the same sigmoid mapping from score -> P(>= calibrator_threshold_m),
+            # so for true "different threshold" they'd retrain)
+            p_above = self._platt.predict_proba(point_pred.reshape(-1, 1))[:, 1]
+        else:
+            p_above = np.full(len(point_pred), np.nan, dtype=float)
+        return point_pred, p_above
 
     def save(self, path: str | Path) -> None:
         """Persist fitted estimator (feature state, imputer, scaler, model) to path."""
@@ -190,10 +281,13 @@ class WaveHeightEstimator:
             "version": ARTIFACT_VERSION,
             "feature_state": self._feature_state,
             "feature_columns": self._feature_columns,
+            "feature_columns_full": self._feature_columns_full,
             "imputer": self._imputer,
             "scaler": self._scaler,
             "model": self._model,
             "horizon_days": self._horizon_days,
+            "platt": self._platt,
+            "calibrator_threshold_m": getattr(self, "_calibrator_threshold_m", CONTEST_THRESHOLD_M),
         }
         joblib.dump(payload, path)
 
@@ -207,8 +301,11 @@ class WaveHeightEstimator:
         est = cls()
         est._feature_state = payload.get("feature_state", {})
         est._feature_columns = payload.get("feature_columns", [])
+        est._feature_columns_full = payload.get("feature_columns_full")
         est._horizon_days = payload.get("horizon_days", FORECAST_HORIZON_DAYS)
         est._imputer = payload.get("imputer")
         est._scaler = payload["scaler"]
         est._model = payload["model"]
+        est._platt = payload.get("platt")
+        est._calibrator_threshold_m = payload.get("calibrator_threshold_m", CONTEST_THRESHOLD_M)
         return est

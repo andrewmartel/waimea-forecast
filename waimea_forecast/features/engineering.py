@@ -9,9 +9,15 @@ import pandas as pd
 
 from waimea_forecast.config import EXCLUDED_FEATURE_COLUMNS, TARGET_COLUMN
 
-# Lag days for target and key predictors
+# Lag days for target and key predictors (short-term horizons)
 LAG_DAYS = [1, 2, 3, 7]
 ROLLING_WINDOW = 7
+
+# 30-day-ahead: longer-term lags and rolling (seasonal / same-time-last-year)
+LAG_DAYS_30D = [7, 14, 30, 365]
+ROLLING_WINDOW_30D = 30
+# For other wave columns on 30d horizon: week and month lags only
+WAVE_LAG_DAYS_30D = [7, 30]
 
 # Columns to exclude from feature set (target and non-numeric)
 DATE_COL = "date"
@@ -85,8 +91,9 @@ def _impute_features(df: pd.DataFrame, fitted_medians: dict[str, float] | None =
 def build_features(
     df: pd.DataFrame,
     *,
+    horizon_days: int = 1,
     lags: list[int] | None = None,
-    rolling_window: int = ROLLING_WINDOW,
+    rolling_window: int | None = None,
     fitted_medians: dict[str, float] | None = None,
     impute: bool = True,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -94,17 +101,22 @@ def build_features(
     Build feature matrix from raw wide-format DataFrame.
 
     Adds lags of target and key buoy wave heights, rolling stats, and calendar
-    features. Optionally imputes missing values (forward fill then median).
+    features. For 30-day-ahead horizon uses longer-term lags (7, 14, 30, 365)
+    and 30-day rolling window to match that time scale. Optionally imputes
+    missing values (forward fill then median).
     Set impute=False when the estimator will fit an imputer on X_train only.
 
     Parameters
     ----------
     df : pd.DataFrame
         Raw data with 'date' and TARGET_COLUMN.
+    horizon_days : int, optional
+        Forecast horizon in days (1, 7, or 30). If >= 30, uses 30d-appropriate
+        lags and rolling window.
     lags : list of int, optional
-        Lag days (default [1, 2, 3, 7]).
+        Override lag days; if None, chosen from horizon_days.
     rolling_window : int, optional
-        Rolling window for mean/std (default 7).
+        Override rolling window; if None, chosen from horizon_days.
     fitted_medians : dict, optional
         Pre-fitted medians for imputation (inference); used only if impute=True.
     impute : bool, optional
@@ -116,16 +128,22 @@ def build_features(
     pd.DataFrame
         Featurized DataFrame; feature cols may contain NaNs if impute=False.
     dict
-        State: fitted_medians (if impute=True), feature_column_order (set later).
+        State: fitted_medians (if impute=True), horizon_days, feature_column_order (set later).
     """
-    lags = lags or LAG_DAYS
+    use_30d_features = horizon_days >= 30
+    if lags is None:
+        lags = LAG_DAYS_30D if use_30d_features else LAG_DAYS
+    if rolling_window is None:
+        rolling_window = ROLLING_WINDOW_30D if use_30d_features else ROLLING_WINDOW
+
     out = df.copy()
     out = out.sort_values(DATE_COL).reset_index(drop=True)
 
     # Lags of target
     out = _add_lags(out, TARGET_COLUMN, lags)
 
-    # Lags of other wave height columns (1-day only; skip excluded columns)
+    # Lags of other wave height columns (horizon-appropriate)
+    wave_lags = WAVE_LAG_DAYS_30D if use_30d_features else [1]
     wave_cols = [
         c
         for c in out.columns
@@ -135,12 +153,12 @@ def build_features(
     ]
     for col in wave_cols[:5]:  # limit to first 5 to avoid explosion
         if col in out.columns:
-            out = _add_lags(out, col, [1])
+            out = _add_lags(out, col, wave_lags)
 
     # Rolling stats for target
     out = _add_rolling(out, TARGET_COLUMN, rolling_window)
 
-    # Calendar
+    # Calendar (seasonality matters more at 30d)
     out = _add_calendar(out)
 
     if impute:
@@ -148,6 +166,7 @@ def build_features(
         state = {"fitted_medians": medians}
     else:
         state = {}
+    state["horizon_days"] = horizon_days
     return out, state
 
 

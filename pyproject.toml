@@ -14,16 +14,23 @@ dependencies = [
     "pandas>=2.0",
     "numpy>=1.24",
     "scikit-learn>=1.3",
+    "shap>=0.43",
+    "matplotlib>=3.7",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    # Windows: avoid deprecation warnings when running tests (venv gets these versions)
+    "pywin32>=306; sys_platform == 'win32'",
+    "pyreadline3>=3.5; sys_platform == 'win32'",
 ]
 
 [project.scripts]
 waimea-train = "waimea_forecast.cli:main_train"
 waimea-predict = "waimea_forecast.cli:main_predict"
+waimea-explain = "waimea_forecast.cli:main_explain"
+waimea-forecast-60 = "waimea_forecast.cli:main_forecast_60"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -31,4 +38,4 @@ include = ["waimea_forecast*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+# pythonpath is only supported in pytest 7+; conftest.py adds project root to sys.path for older pytest
