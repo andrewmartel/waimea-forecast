@@ -2,7 +2,7 @@
 
 Proof-of-concept package to forecast wave heights at Waimea Bay (North Shore, Oahu) for the World Surf League, so they can schedule a big wave contest when conditions reach at least 3 m.
 
-**Forecast horizons:** 1-, 7-, and 30-day-ahead. The **30-day-ahead** horizon supports WSL’s potential need for about a month of lead time to organize the contest and for contestants to arrange travel and lodging.
+**Forecast horizons:** 1-, 7-, and 30-day-ahead (predict 30 days ahead of any given input). Also can predict the next N-days from today or any given past day; this horizon supports WSL’s potential need for about a month of lead time to organize the contest and for contestants to arrange travel and lodging.
 
 **Target variable:** `wave_height_51201h` (North Shore buoy).  
 **Data:** Daily buoy metrics in wide format (`wide.csv`).
@@ -19,7 +19,7 @@ Before building, I would ask the WSL on a kick-off call:
 - **Sustained vs. peak:** Does the contest require waves to be **at or above threshold for a sustained period** (e.g. several hours or a full day), or is it enough if the **maximum** (e.g. peak in a day) reaches that height? If sustained, we may need sub-daily data or a different target (e.g. proportion of readings ≥ 3 m).
 - **Timing of readings:** When does the buoy report (e.g. once per day at a fixed hour)? The PoC uses **daily** aggregates; if there are **multiple readings per day**, we could define “contest-ready” from max, mean, or fraction of readings ≥ threshold, and align forecasted time of day with when the WSL expects/desires the contest to be run.
 - **Contest and decision timing:** When does the contest window open/close (e.g. single day vs. multi-day window)? When does the WSL need to commit (e.g. 24 h before)? This drives horizon and how we present P(contest-ready) (e.g. P(max ≥ 3 m) on day D vs. P(any day in next 7 ≥ 3 m)).
-- **Lead time:** How far ahead do they need the forecast (1 day, 1 week, 1 month)? This drives model choice and feature design.
+- **Lead time:** How far ahead do they need the forecast (1 day, 1 week, 1 month, 6 months)? This drives model choice and feature design.
 - **Decision use:** Is the output a go/no-go date, a probability of contest-ready conditions, or a full time series of predicted heights?
 - **Update frequency:** Daily retrains vs. on-demand vs. weekly.
 - **Risk tolerance:** How to balance false positives (schedule and cancel) vs. false negatives (miss a good window).
@@ -41,7 +41,7 @@ Additional data sources to complement the buoys:
 
 - **Missingness:** Buoy outages and gaps mostly appear in chunks (consecutive periods of missing data), which are likely related to instrument/transmission issues. The target `wave_height_51201h` and some features have NAs.
 - **Target:** For supervised learning, we use only rows where the target (n-days-ahead wave height) is observed; we drop rows with missing target when building labels.
-- **Features:** We avoid look-ahead. We impute feature columns with **MICE** (sklearn `IterativeImputer`) fitted on training data only; optionally use **KNN** (`imputation="knn"` on the estimator). No future information is used. The column `wave_height_21418t` is excluded from features (too much missing data). For production, we could add missingness indicators or tune imputation.
+- **Features:** We avoid look-ahead. We impute feature columns with **MICE** (sklearn `IterativeImputer`) fitted on training data only; optionally use **KNN** (`imputation="knn"` on the estimator). No future information is used. The column `wave_height_21418t` is excluded from features (58% missing). For production, we could add missingness indicators or tune imputation.
 
 ### 4. Approaches
 
