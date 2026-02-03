@@ -315,10 +315,10 @@ def main_explain() -> None:
     print(f"Saved SHAP plot to {shap_path}", file=sys.stderr)
 
 
-def main_forecast_60() -> None:
-    """Daily predictions for the next N days from 'today'; optional validation on final 60 days."""
+def main_forecast_next() -> None:
+    """Daily predictions for the next N days from 'today'; optional validation on final N days."""
     parser = argparse.ArgumentParser(
-        description="Forecast next N days from a given 'today'; or validate on final 60 days"
+        description="Forecast next N days from a given 'today'; or validate on final N days"
     )
     parser.add_argument(
         "--data",
@@ -337,18 +337,19 @@ def main_forecast_60() -> None:
         type=str,
         default=None,
         metavar="DATE",
-        help="'Today' date (YYYY-MM-DD). Required unless --validate-60",
+        help="'Today' date (YYYY-MM-DD). Required unless --validate",
     )
     parser.add_argument(
         "--days",
         type=int,
         default=60,
+        metavar="N",
         help="Number of days to forecast (default: 60)",
     )
     parser.add_argument(
-        "--validate-60",
+        "--validate",
         action="store_true",
-        help="Use 61st-from-end row as 'today' and compare to actuals for final 60 days",
+        help="Use (N+1)th-from-end row as 'today' and compare to actuals for final N days",
     )
     parser.add_argument(
         "--threshold",
@@ -379,33 +380,24 @@ def main_forecast_60() -> None:
     df = df.sort_values("date").reset_index(drop=True)
     threshold = args.threshold or getattr(est, "_calibrator_threshold_m", CONTEST_THRESHOLD_M)
 
-    if args.validate_60:
+    if args.validate:
         if len(df) < args.days + 1:
             print(
-                f"Need at least {args.days + 1} rows for --validate-60",
+                f"Need at least {args.days + 1} rows for --validate",
                 file=sys.stderr,
             )
             sys.exit(1)
         as_of_idx = len(df) - args.days - 1
         as_of_date = df["date"].iloc[as_of_idx]
-        print(f"Validating: as_of_date={as_of_date} (61st from end)", file=sys.stderr)
+        n_th = args.days + 1
+        print(f"Validating: as_of_date={as_of_date} ({n_th}th from end)", file=sys.stderr)
     else:
         if not args.as_of:
-            print("Provide --as-of DATE or use --validate-60", file=sys.stderr)
+            print("Provide --as-of DATE or use --validate", file=sys.stderr)
             sys.exit(1)
         as_of_date = args.as_of
 
     fc = predict_next_n_days(est, df, as_of_date, n_days=args.days, threshold_m=threshold)
-
-    if args.validate_60:
-        actual_dates = df["date"].iloc[-args.days:].reset_index(drop=True)
-        actual_values = df[TARGET_COLUMN].iloc[-args.days:].reset_index(drop=True)
-        fc = fc.merge(
-            pd.DataFrame({"date": actual_dates, "actual": actual_values}),
-            on="date",
-            how="left",
-        )
-        fc["abs_delta"] = (fc["predicted"] - fc["actual"]).abs()
 
     out_path = Path(args.out) if args.out else None
     if out_path:

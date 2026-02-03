@@ -30,7 +30,7 @@ dev = [
 waimea-train = "waimea_forecast.cli:main_train"
 waimea-predict = "waimea_forecast.cli:main_predict"
 waimea-explain = "waimea_forecast.cli:main_explain"
-waimea-forecast-60 = "waimea_forecast.cli:main_forecast_60"
+waimea-forecast-next = "waimea_forecast.cli:main_forecast_next"
 
 [tool.setuptools.packages.find]
 where = ["."]

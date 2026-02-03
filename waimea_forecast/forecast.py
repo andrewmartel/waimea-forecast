@@ -38,7 +38,8 @@ def predict_next_n_days(
     Returns
     -------
     pd.DataFrame
-        Columns: date, predicted, p_contest_ready (one row per forecast day).
+        Columns: date, predicted, p_contest_ready; actual and abs_delta when
+        the forecast date exists in df (for validation/comparison).
     """
     as_of = pd.Timestamp(as_of_date)
     df = df.sort_values("date").reset_index(drop=True)
@@ -70,8 +71,13 @@ def predict_next_n_days(
         new_row[TARGET_COLUMN] = pred_val
         df_today = pd.concat([df_today, new_row.to_frame().T], ignore_index=True)
 
-    return pd.DataFrame({
+    result = pd.DataFrame({
         "date": dates,
         "predicted": preds,
         "p_contest_ready": p_contest_list,
     })
+    # Attach actuals wherever forecast dates exist in the dataset (for validation/comparison)
+    actuals = df[["date", TARGET_COLUMN]].rename(columns={TARGET_COLUMN: "actual"})
+    result = result.merge(actuals, on="date", how="left")
+    result["abs_delta"] = (result["predicted"] - result["actual"]).abs()
+    return result

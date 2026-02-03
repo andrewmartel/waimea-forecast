@@ -17,7 +17,7 @@ Before building, I would ask the WSL on a kick-off call:
 
 - **Definition of “large enough”:** Confirm the 3 m threshold (or different) and whether it refers to significant wave height, max height, or another metric.
 - **Sustained vs. peak:** Does the contest require waves to be **at or above threshold for a sustained period** (e.g. several hours or a full day), or is it enough if the **maximum** (e.g. peak in a day) reaches that height? If sustained, we may need sub-daily data or a different target (e.g. proportion of readings ≥ 3 m).
-- **Timing of readings:** When does the buoy report (e.g. once per day at a fixed hour)? The PoC uses **daily** aggregates; if there are **multiple readings per day**, we could define “contest-ready” from max, mean, or fraction of readings ≥ threshold, and align forecast timing with when the WSL needs to decide.
+- **Timing of readings:** When does the buoy report (e.g. once per day at a fixed hour)? The PoC uses **daily** aggregates; if there are **multiple readings per day**, we could define “contest-ready” from max, mean, or fraction of readings ≥ threshold, and align forecasted time of day with when the WSL expects/desires the contest to be run.
 - **Contest and decision timing:** When does the contest window open/close (e.g. single day vs. multi-day window)? When does the WSL need to commit (e.g. 24 h before)? This drives horizon and how we present P(contest-ready) (e.g. P(max ≥ 3 m) on day D vs. P(any day in next 7 ≥ 3 m)).
 - **Lead time:** How far ahead do they need the forecast (1 day, 1 week, 1 month)? This drives model choice and feature design.
 - **Decision use:** Is the output a go/no-go date, a probability of contest-ready conditions, or a full time series of predicted heights?
@@ -160,25 +160,25 @@ waimea-predict --data data/wide.csv --model models/artifact.joblib --out predict
 
 ---
 
-## 60-day forecast from "today"
+## Forecast next N days from "today"
 
-To get **daily predictions for the next N days** from a given "today" (e.g. for a dashboard or planning tool):
-
-```bash
-python scripts/forecast_60.py --data data/wide.csv --model models/artifact.joblib --as-of 2017-11-01 --days 60 --out forecast_60d.csv
-```
-
-Or (if installed): `waimea-forecast-60 --data data/wide.csv --model models/artifact.joblib --as-of 2017-11-01 --days 60 --out forecast_60d.csv`
-
-Output columns: **date**, **predicted**, **p_contest_ready**. The model is run recursively (each day’s forecast is used as input for the next); a **1-day horizon** model is recommended for true daily recursion.
-
-**Validate on the final 60 days:** Use the 61st-from-last row as "today" and compare predictions to actuals:
+To get **daily predictions for the next N days** from a given "today" (e.g. for a dashboard or planning tool), use **`--days N`** (default **60**):
 
 ```bash
-waimea-forecast-60 --data data/wide.csv --model models/artifact.joblib --validate-60 --out forecast_60d_validate.csv
+python scripts/forecast_60.py --data data/wide.csv --model models/artifact.joblib --as-of 2017-11-01 --days 60 --out forecast_next.csv
 ```
 
-The output will include **actual** and **abs_delta** for the last 60 days of the dataset.
+Or (if installed): `waimea-forecast-next --data data/wide.csv --model models/artifact.joblib --as-of 2017-11-01 --days 60 --out forecast_next.csv`
+
+Output columns: **date**, **predicted**, **p_contest_ready**; and whenever a forecast date falls within the dataset, **actual** and **abs_delta** are included for comparison/validation. The model is run recursively (each day’s forecast is used as input for the next); a **1-day horizon** model is recommended for true daily recursion.
+
+**Validate on the final N days:** Use the (N+1)th-from-end row as "today" and compare predictions to actuals for the last N days:
+
+```bash
+waimea-forecast-next --data data/wide.csv --model models/artifact.joblib --validate --days 60 --out forecast_validate.csv
+```
+
+With **`--validate`**, output includes **actual** and **abs_delta** for those N days. You can use **`--days 30`** or any other N to validate on a shorter or longer window.
 
 ---
 
@@ -211,7 +211,7 @@ Saves `artifact_30d_weights.png` and `artifact_30d_shap.png` in the model direct
 - **Horizons:** 1/7/30-day are supported; 30-day uses 7/14/30/365 lags and 30-day rolling; consider direct multi-output.
 - **Probabilistic forecasts:** **Platt scaling** is in place for P(contest-ready); add quantile regression or bootstrap for full intervals.
 - **Feature selection:** **`--max-features`** and **`--max-features cv`**; SHAP and weights plots saved at train time; consider more thresholds.
-- **60-day forecast:** **`waimea-forecast-60`** / `scripts/forecast_60.py` with **`--validate-60`** to test on final 60 days; recursive 1d recommended.
+- **Next-N-days forecast:** **`waimea-forecast-next`** / `scripts/forecast_next.py` with **`--days N`** (default 60) and **`--validate`** to test on final N days; recursive 1d recommended.
 - **Timing and granularity:** Align with WSL on **when** readings are taken and **sustained vs. max** (see Open Questions); support multiple readings per day if needed.
 - **External data:** Integrate NOAA/NDBC or other APIs and refresh in a pipeline.
 - **Retraining:** Scheduled retrains (e.g. weekly) and versioned artifacts.
@@ -226,16 +226,16 @@ waimea_forecast/
 ├── config.py           # Target, paths, horizons (1/7/30d), split, threshold
 ├── data/loader.py      # load_wide(), validate_schema()
 ├── features/engineering.py  # build_features(), prepare_supervised()
-├── forecast.py         # predict_next_n_days() for 60-day-from-today
+├── forecast.py         # predict_next_n_days() for next N days from today
 ├── explain.py          # plot_model_weights(), plot_shap(), export_weights_and_shap()
 ├── metrics.py          # regression_metrics, classification_metrics, format_validation_report
 ├── models/estimator.py # WaveHeightEstimator (fit, predict, predict_with_proba, Platt scaling)
 ├── tuning.py           # select_max_features_cv()
-└── cli.py              # main_train, main_predict, main_explain, main_forecast_60
+└── cli.py              # main_train, main_predict, main_explain, main_forecast_next
 scripts/
 ├── train.py            # Train and save artifact (weights + SHAP)
 ├── predict.py          # Predict with point forecast and p_contest_ready
-├── forecast_60.py      # Next N days from --as-of or --validate-60
+├── forecast_next.py    # Next N days from --as-of or --validate
 └── confusion_k5.py    # Confusion matrices for max_features=5 (example)
 tests/
 ├── test_loader.py
