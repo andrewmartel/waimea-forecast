@@ -16,6 +16,9 @@ Proof-of-concept package to forecast wave heights at Waimea Bay (North Shore, Oa
 Before building, I would ask the WSL on a kick-off call:
 
 - **Definition of “large enough”:** Confirm the 3 m threshold (or different) and whether it refers to significant wave height, max height, or another metric.
+- Sustained vs. peak: Does the contest require waves to be at or above threshold for a sustained period (e.g. several hours or a full day), or is it enough if the maximum (e.g. peak in a day) reaches that height? If sustained, we may need sub-daily data or a different target (e.g. proportion of readings ≥ 3 m).
+- Timing of readings: When does the buoy report (e.g. once per day at a fixed hour)? The PoC uses daily aggregates; if there are multiple readings per day, we could define “contest-ready” from max, mean, or fraction of readings ≥ threshold, and align forecasted time of day with when the WSL expects/desires the contest to be run.
+- Contest and decision timing: When does the contest window open/close (e.g. single day vs. multi-day window)? When does the WSL need to commit (e.g. 24 h before)? This drives horizon and how we present P(contest-ready) (e.g. P(max ≥ 3 m) on day D vs. P(any day in next 7 ≥ 3 m)).
 - **Lead time:** How far ahead do they need the forecast (1 day, 1 week, 1 month, 6 months)? This drives model choice and feature design.
 - **Decision use:** Is the output a go/no-go date, a probability of contest-ready conditions, or a full time series of predicted heights?
 - **Update frequency:** Daily retrains vs. on-demand vs. weekly.
