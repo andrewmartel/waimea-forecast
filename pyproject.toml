@@ -14,6 +14,8 @@ dependencies = [
     "pandas>=2.0",
     "numpy>=1.24",
     "scikit-learn>=1.3",
+    "statsmodels>=0.14",
+    "scipy>=1.10",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +26,7 @@ dev = [
 [project.scripts]
 waimea-train = "waimea_forecast.cli:main_train"
 waimea-predict = "waimea_forecast.cli:main_predict"
+waimea-rolling-60 = "waimea_forecast.cli:main_rolling_60"
 
 [tool.setuptools.packages.find]
 where = ["."]

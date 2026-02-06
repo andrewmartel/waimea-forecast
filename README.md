@@ -157,6 +157,29 @@ waimea-predict --data data/wide.csv --model models/artifact.joblib --out predict
 
 ---
 
+## Rolling 60-day forecast (dev-basic)
+
+On branch **dev-basic**, a rolling N-day daily forecast is available: **robust baseline** + **simple statistical model (ETS/ARIMA)** + optional **segments** + **uncertainty intervals**.
+
+**Dependencies:** `statsmodels` and `scipy` (for ETS/ARIMA and intervals). Install with `pip install -e .` (they are in `pyproject.toml`).
+
+```bash
+waimea-rolling-60 --data data/wide.csv --as-of 2017-11-01 --days 60 --out rolling_60.csv
+```
+
+Options:
+
+- **`--baseline`** — `persistence` (default), `seasonal_naive`, or `rolling_mean`
+- **`--model`** — `ets` (default) or `arima` for the statistical model (point + 80% and 95% intervals)
+- **`--segments`** — run per-segment forecasts (by wave_height column) and include `segment_id` in output
+- **`--tune`** — tune ETS/ARIMA by holdout MAE over a config grid before forecasting (recommended for ARIMA; improves accuracy and interval coverage)
+
+Output columns: **date**, **step**, **model** (baseline | ets | arima), **predicted**, **lower_80**, **upper_80**, **lower_95**, **upper_95**, **segment_id**.
+
+Modules: `waimea_forecast.baseline`, `waimea_forecast.statistical`, `waimea_forecast.segments`, `waimea_forecast.rolling_60`. Reconciliation (bottom-up / top-down) is stubbed in `segments.reconcile_*` for future use.
+
+---
+
 ## Design Assumptions
 
 - **Target:** `wave_height_51201h` (next-day value).
@@ -187,11 +210,17 @@ waimea_forecast/
 ├── config.py         # Target, paths, horizons (1/7/30d), split, excluded columns, 3m threshold
 ├── data/loader.py    # load_wide(), validate_schema()
 ├── features/engineering.py  # build_features(), prepare_supervised()
-├── models/estimator.py      # WaveHeightEstimator (fit/predict/save/load)
-└── cli.py            # main_train(), main_predict()
+├── models/estimator.py     # WaveHeightEstimator (fit/predict/save/load)
+├── baseline.py       # persistence, seasonal_naive, rolling_mean (dev-basic)
+├── statistical.py    # ETS/ARIMA fit and forecast with intervals (dev-basic)
+├── segments.py       # get_segments(), reconcile_* stubs (dev-basic)
+├── rolling_60.py     # run_rolling_60() orchestrator (dev-basic)
+├── tuning.py         # select_best_ets(), select_best_arima() by holdout MAE (dev-basic)
+└── cli.py            # main_train(), main_predict(), main_rolling_60()
 scripts/
 ├── train.py          # CLI: train and save artifact
-└── predict.py        # CLI: load artifact and predict
+├── predict.py        # CLI: load artifact and predict
+└── rolling_60.py     # CLI: rolling N-day forecast (dev-basic)
 tests/
 ├── test_loader.py
 ├── test_features.py

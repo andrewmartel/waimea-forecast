@@ -149,3 +149,86 @@ def main_predict() -> None:
         print(f"Wrote predictions to {out_path}", file=sys.stderr)
     else:
         print(out_df.to_csv(index=False, date_format="%Y-%m-%d"))
+
+
+def main_rolling_60() -> None:
+    """Rolling N-day forecast: baseline + ETS/ARIMA + optional segments + intervals."""
+    from waimea_forecast.rolling_60 import run_rolling_60
+
+    parser = argparse.ArgumentParser(
+        description="Rolling 60-day daily forecast: baseline + statistical model + intervals"
+    )
+    parser.add_argument(
+        "--data",
+        type=str,
+        default=os.environ.get("WAIMEA_DATA_PATH", DEFAULT_DATA_PATH),
+        help="Path to wide.csv",
+    )
+    parser.add_argument(
+        "--as-of",
+        type=str,
+        required=True,
+        metavar="DATE",
+        help="'Today' date (YYYY-MM-DD); forecast starts the next day",
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=60,
+        metavar="N",
+        help="Number of days to forecast (default: 60)",
+    )
+    parser.add_argument(
+        "--baseline",
+        type=str,
+        default="persistence",
+        choices=["persistence", "seasonal_naive", "rolling_mean"],
+        help="Baseline method (default: persistence)",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="ets",
+        choices=["ets", "arima"],
+        help="Statistical model for point + intervals (default: ets)",
+    )
+    parser.add_argument(
+        "--segments",
+        action="store_true",
+        help="Run per-segment forecasts (by wave_height column)",
+    )
+    parser.add_argument(
+        "--tune",
+        action="store_true",
+        help="Tune ETS/ARIMA config by holdout MAE before forecasting",
+    )
+    parser.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Output path (default: stdout)",
+    )
+    args = parser.parse_args()
+
+    data_path = Path(args.data)
+    if not data_path.is_absolute():
+        data_path = Path.cwd() / data_path
+    df = load_wide(data_path)
+    validate_schema(df)
+
+    result = run_rolling_60(
+        df,
+        args.as_of,
+        n_days=args.days,
+        baseline_method=args.baseline,
+        statistical_method=args.model,
+        use_segments=args.segments,
+        tune_statistical=args.tune,
+    )
+
+    out_path = Path(args.out) if args.out else None
+    if out_path:
+        result.to_csv(out_path, index=False, date_format="%Y-%m-%d")
+        print(f"Wrote rolling forecast to {out_path}", file=sys.stderr)
+    else:
+        print(result.to_csv(index=False, date_format="%Y-%m-%d"))
